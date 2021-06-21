@@ -20,7 +20,7 @@ def unique_integers(n: int) -> list:
 
 
 def unique_strings(ntokens: int, pool: str = ascii_letters) -> list:
-    ''' A function for generating a list of pseudorandom numbers.
+    ''' A function for generating a list of random strings.
 
     Args:
         pool: letters for string.
@@ -38,9 +38,14 @@ def unique_strings(ntokens: int, pool: str = ascii_letters) -> list:
 
 
 if __name__ == '__main__':
-
+    
+    # concatenation of two lists
     random_list = unique_integers(200) + unique_strings(200)
+    
+    # shuffle list
     random_list = sorted(random_list, key=lambda A: random())
+    
+    # attempts counter
     count = 0
 
     for x in random_list:
