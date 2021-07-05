@@ -12,11 +12,14 @@ args = parser.parse_args()
 
 
 def get_strings(file: str = args.path_file) -> list:
-    """ Reading data from a file and converting it to a list of sentences.
+    """Reading data from a file and converting it to a list of sentences.
 
-    Args:
-        file: the path to the data file.
-    Returns:
+    Parameters
+    ----------
+      - file: the path to the data file.
+      
+    Returns
+    -------
         a list of sentences.
     """
 
@@ -32,11 +35,14 @@ def get_strings(file: str = args.path_file) -> list:
 
 
 def upper(sents: list = get_strings()) -> list:
-    """ Converts all sentences to uppercase.
+    """Converts all sentences to uppercase.
 
-    Args:
-        sents: text sentences.
-    Returns:
+    Parameters
+    ----------
+      - sents: text sentences.
+      
+    Returns
+    -------
         a list of uppercase sentences.
     """
 
