@@ -1,3 +1,4 @@
+"""This modelu provides the function to converts all sentences to uppercase."""
 import argparse
 import codecs
 import os
@@ -16,7 +17,9 @@ def get_strings(file: str = args.path_file) -> list:
 
     Parameters
     ----------
-      - file: the path to the data file.
+      - file: `str`
+      
+          The path to the data file.
       
     Returns
     -------
@@ -39,7 +42,9 @@ def upper(sents: list = get_strings()) -> list:
 
     Parameters
     ----------
-      - sents: text sentences.
+      - sents: `list`
+      
+          Text sentences.
       
     Returns
     -------
