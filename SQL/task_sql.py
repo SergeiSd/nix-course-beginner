@@ -3,7 +3,7 @@ import csv
 import os
 import psycopg2
 
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Dict
 
 
 def check_path(path: str) -> Union[str, None]:
@@ -36,9 +36,8 @@ def check_path(path: str) -> Union[str, None]:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_path',
-                    default='/home/sergei/nix-projects/SQL/data',
-                    type=check_path, help='')
+parser.add_argument('--data_path', type=check_path,
+                    help='Path of data files.')
 args = parser.parse_args()
 
 
@@ -59,25 +58,43 @@ def connect_to_db() -> Tuple[psycopg2.extensions.connection,
 
     return (cursor, conn)
 
+
+def check_if_exists_tables(curs: psycopg2.extensions.cursor,
+                           db_tables: List[str]) -> Dict[str, bool]:
+    """A Function to check the existence of all required tables.
+
+    Parametes
+    ---------
+        - curs: `psycopg2.extensions.cursor`
+
+            Cursor to execute PostgreSQL command in database session.
+
+        - db_tables: `List[str]`
+
+            List of database tables.
+
+    Returns
+    -------
+        class: `Dict[str, bool]`
+
+            Dictionary, where the `key` is a name of table, and the `value`
+            is whether it exists in the database.
+    """
+
+    checking_tables: Dict = dict.fromkeys(db_tables)
+    execute_query = """select exists(select * from information_schema.tables
+                       where table_name=%s)"""
+
+    for table in db_tables:
+        curs.execute(execute_query, (table, ))
+        checking_tables[table] = curs.fetchone()[0]
+
+    return checking_tables
+
+
 def load_data_to_db(path: str,
                     curs: psycopg2.extensions.cursor,
                     conn: psycopg2.extensions.connection):
-
-    db_tables: List[str] = ['Cart_product',
-                            'Carts',
-                            'Categories',
-                            'Order',
-                            'Order_status',
-                            'Products',
-                            'Users']
-
-    required_files: List[str] = ['cart_products.csv',
-                                 'carts.csv',
-                                 'categories.csv',
-                                 'order_statuses.csv',
-                                 'orders.csv',
-                                 'products.csv',
-                                 'users.csv']
     '''
     for file, table in zip(required_files, db_tables):
         file = path + file
@@ -87,7 +104,8 @@ def load_data_to_db(path: str,
     '''
 
     insert_query = """INSERT INTO "users"
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+
     file = '/home/sergei/nix-projects/SQL/data/sql_input_files/users.csv'
 
     with open(file, 'r') as f:
@@ -99,6 +117,31 @@ def load_data_to_db(path: str,
 
 if __name__ == "__main__":
 
+    db_tables: List[str] = ['cart_product',
+                            'carts',
+                            'categories',
+                            'order',
+                            'order_status',
+                            'products',
+                            'users']
+
+    required_files: List[str] = ['cart_products.csv',
+                                 'carts.csv',
+                                 'categories.csv',
+                                 'order_statuses.csv',
+                                 'orders.csv',
+                                 'products.csv',
+                                 'users.csv']
+
     cursor, connection = connect_to_db()
 
-    load_data_to_db(args.data_path, cursor, connection)
+    checking_tables = check_if_exists_tables(cursor, db_tables)
+
+    if all([value for key, value in checking_tables.items()]):
+        print('All tables exist.')
+    else:
+        for table, exist in checking_tables.items():
+            if not exist:
+                print(f'Error: table |{table}| does not exist.')
+
+    #load_data_to_db(args.data_path, cursor, connection)
