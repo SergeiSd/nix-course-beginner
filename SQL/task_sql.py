@@ -3,7 +3,7 @@ import csv
 import os
 import psycopg2
 
-from typing import List, Union, Tuple, Dict
+from typing import List, Union, Dict
 
 
 def check_path(path: str) -> Union[str, None]:
@@ -38,36 +38,44 @@ def check_path(path: str) -> Union[str, None]:
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_path', type=check_path,
                     help='Path of data files.')
+parser.add_argument('--db_name', type=str,
+                    help='Name of database.')
+parser.add_argument('--user', type=str,
+                    help='User for connect to database.')
+parser.add_argument('--db_password', type=str,
+                    help='Password for connect to database.')
+parser.add_argument('--db_host', type=str,
+                    help='Host for connect to database.')
+parser.add_argument('--db_port', type=str,
+                    help='Port for connect to database.')
 args = parser.parse_args()
 
 
-def connect_to_db() -> Tuple[psycopg2.extensions.connection,
-                             psycopg2.extensions.cursor]:
+def create_connection(db_name, db_user, db_password,
+                      db_host, db_port) -> psycopg2.extensions.connection:
     """ A function for connet to DB.
     """
-
+    connection = None
     try:
-        conn = psycopg2.connect(dbname='nix_db',
-                                user='postgres',
-                                password='Slyadnev78Fw',
-                                host='localhost',
-                                port="5432")
-        cursor = conn.cursor()
+        connection = psycopg2.connect(
+            database=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port
+        )
+        print("Connection to PostgreSQL DB successful.")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
-    return (cursor, conn)
+    return connection
 
 
-def check_if_exists_tables(curs: psycopg2.extensions.cursor,
-                           db_tables: List[str]) -> Dict[str, bool]:
+def check_if_exists_tables(db_tables: List[str]) -> Dict[str, bool]:
     """A Function to check the existence of all required tables.
 
     Parametes
     ---------
-        - curs: `psycopg2.extensions.cursor`
-
-            Cursor to execute PostgreSQL command in database session.
 
         - db_tables: `List[str]`
 
@@ -80,39 +88,16 @@ def check_if_exists_tables(curs: psycopg2.extensions.cursor,
             Dictionary, where the `key` is a name of table, and the `value`
             is whether it exists in the database.
     """
-
+    cursor = connection.cursor()
     checking_tables: Dict = dict.fromkeys(db_tables)
     execute_query = """select exists(select * from information_schema.tables
                        where table_name=%s)"""
 
     for table in db_tables:
-        curs.execute(execute_query, (table, ))
-        checking_tables[table] = curs.fetchone()[0]
+        cursor.execute(execute_query, (table, ))
+        checking_tables[table] = cursor.fetchone()[0]
 
     return checking_tables
-
-
-def load_data_to_db(path: str,
-                    curs: psycopg2.extensions.cursor,
-                    conn: psycopg2.extensions.connection):
-    '''
-    for file, table in zip(required_files, db_tables):
-        file = path + file
-        with open(file, 'r') as f:
-            cursor.copy_from(f, table, sep=',')
-    conn.commit()
-    '''
-
-    insert_query = """INSERT INTO "users"
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-
-    file = '/home/sergei/nix-projects/SQL/data/sql_input_files/users.csv'
-
-    with open(file, 'r') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            curs.execute(insert_query, row)
-    conn.commit()
 
 
 if __name__ == "__main__":
@@ -133,9 +118,12 @@ if __name__ == "__main__":
                                  'products.csv',
                                  'users.csv']
 
-    cursor, connection = connect_to_db()
+    connection = create_connection(
+        args.db_name, args.user, args.db_password,
+        args.db_host, args.db_port
+    )
 
-    checking_tables = check_if_exists_tables(cursor, db_tables)
+    checking_tables = check_if_exists_tables(db_tables)
 
     if all([value for key, value in checking_tables.items()]):
         print('All tables exist.')
@@ -144,4 +132,3 @@ if __name__ == "__main__":
             if not exist:
                 print(f'Error: table |{table}| does not exist.')
 
-    #load_data_to_db(args.data_path, cursor, connection)
