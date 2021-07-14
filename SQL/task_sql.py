@@ -1,5 +1,4 @@
 import argparse
-import csv
 import os
 import psycopg2
 
@@ -17,26 +16,21 @@ def check_path(path: str) -> Union[str, None]:
                                  'users.csv']
 
     if not os.path.exists(path):
-        print('Error: next path: {} is not exists.'.format(path))
-        raise argparse.ArgumentTypeError
+        error_messege = f'next path: {path} is not exists.'
+        raise argparse.ArgumentTypeError(error_messege)
 
-    if path[-1] != '/':
-        fixed_path = list(path)
-        fixed_path.append('/')
-        path = ''.join(fixed_path)
+    files_in_dir = os.listdir(path)
 
-    files = os.listdir(path)
-
-    if sorted(required_files) == sorted(files):
+    if sorted(required_files) == sorted(files_in_dir):
         return path
     else:
-        print("""Error: next path: {} is not contain \
-              required files.""".format(path))
-        raise argparse.ArgumentTypeError
+        error_messege = f'next path: {path} is not contain required files.'
+        raise argparse.ArgumentTypeError(error_messege)
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_path', type=check_path,
+                    default='data/sql_input_files',
                     help='Path of data files.')
 parser.add_argument('--db_name', type=str,
                     help='Name of database.')
@@ -53,7 +47,7 @@ args = parser.parse_args()
 
 def create_connection(db_name, db_user, db_password,
                       db_host, db_port) -> psycopg2.extensions.connection:
-    """ A function for connet to DB.
+    """ A function for creating a connection to the database.
     """
     connection = None
     try:
@@ -71,59 +65,86 @@ def create_connection(db_name, db_user, db_password,
     return connection
 
 
-def check_if_exists_tables(db_tables: List[str]) -> Dict[str, bool]:
-    """A Function to check the existence of all required tables.
+def check_if_exists_tables(connection: psycopg2.extensions.connection,
+                           db_tables: List[str]) -> Dict[str, bool]:
+    """A function to check the existence of all required tables.
 
     Parametes
     ---------
 
         - db_tables: `List[str]`
 
-            List of database tables.
+        List of database tables.
 
     Returns
     -------
         class: `Dict[str, bool]`
 
-            Dictionary, where the `key` is a name of table, and the `value`
-            is whether it exists in the database.
+        Dictionary, where the `key` is a name of table, and the `value`
+        is whether it exists in the database.
     """
+
     cursor = connection.cursor()
     checking_tables: Dict = dict.fromkeys(db_tables)
-    execute_query = """select exists(select * from information_schema.tables
-                       where table_name=%s)"""
+    select_query = """select exists(select * from information_schema.tables
+                       where table_name = %s)"""
 
     for table in db_tables:
-        cursor.execute(execute_query, (table, ))
+        cursor.execute(select_query, (table, ))
         checking_tables[table] = cursor.fetchone()[0]
 
     return checking_tables
 
 
+def check_if_table_is_empty(connection: psycopg2.extensions.connection,
+                            table: str) -> bool:
+    select_query = """select * from %s"""
+    with connection.cursor() as cursor:
+        cursor.execute(select_query, (table, ))
+        return cursor.fetchone()
+
+
+def insert_data_to_db(connection: psycopg2.extensions.connection,
+                      table: str, file: str) -> None:
+
+    with connection.cursor() as cursor:
+        with open(file, 'r') as f:
+            try:
+                cursor.copy_from(f, table, sep=',')
+                print(f'Data from {f} loaded successfully.')
+            except Exception as e:
+                print(e)
+
+    connection.commit()
+
+
 if __name__ == "__main__":
 
-    db_tables: List[str] = ['cart_product',
+    db_tables: List[str] = ['users',
                             'carts',
                             'categories',
-                            'order',
-                            'order_status',
                             'products',
-                            'users']
+                            'cart_product',
+                            'order_status',
+                            'order']
 
-    required_files: List[str] = ['cart_products.csv',
+    required_files: List[str] = ['users.csv',
                                  'carts.csv',
                                  'categories.csv',
-                                 'order_statuses.csv',
-                                 'orders.csv',
                                  'products.csv',
-                                 'users.csv']
+                                 'cart_products.csv',
+                                 'order_statuses.csv',
+                                 'orders.csv']
 
     connection = create_connection(
         args.db_name, args.user, args.db_password,
         args.db_host, args.db_port
     )
 
-    checking_tables = check_if_exists_tables(db_tables)
+    checking_tables = check_if_exists_tables(
+        connection,
+        db_tables
+    )
 
     if all([value for key, value in checking_tables.items()]):
         print('All tables exist.')
@@ -132,3 +153,6 @@ if __name__ == "__main__":
             if not exist:
                 print(f'Error: table |{table}| does not exist.')
 
+    for table, file in zip(db_tables, required_files):
+        #print(check_if_table_is_empty(connection, table))
+        insert_data_to_db(connection, table, file)
