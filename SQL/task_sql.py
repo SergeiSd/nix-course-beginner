@@ -2,18 +2,21 @@ import argparse
 import os
 import psycopg2
 
-from typing import List, Union, Dict
+from psycopg2 import sql
+from psycopg2 import DatabaseError
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from typing import List, NoReturn, Union, Dict, Tuple, Optional
 
 
 def check_path(path: str) -> Union[str, None]:
 
-    required_files: List[str] = ['cart_products.csv',
-                                 'carts.csv',
-                                 'categories.csv',
-                                 'order_statuses.csv',
-                                 'orders.csv',
-                                 'products.csv',
-                                 'users.csv']
+    required_files: Tuple[str] = ('cart_products.csv',
+                                  'carts.csv',
+                                  'categories.csv',
+                                  'order_statuses.csv',
+                                  'orders.csv',
+                                  'products.csv',
+                                  'users.csv')
 
     if not os.path.exists(path):
         error_messege = f'next path: {path} is not exists.'
@@ -30,129 +33,292 @@ def check_path(path: str) -> Union[str, None]:
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_path', type=check_path,
-                    default='data/sql_input_files',
+                    default='data/sql_input_files/',
                     help='Path of data files.')
-parser.add_argument('--db_name', type=str,
-                    help='Name of database.')
-parser.add_argument('--user', type=str,
-                    help='User for connect to database.')
-parser.add_argument('--db_password', type=str,
-                    help='Password for connect to database.')
-parser.add_argument('--db_host', type=str,
-                    help='Host for connect to database.')
-parser.add_argument('--db_port', type=str,
-                    help='Port for connect to database.')
+parser.add_argument('--db_name', type=str, default='nix_db',
+                    help='Database name.')
+parser.add_argument('--user', type=str, default='postgres',
+                    help='Username to connect to the database.')
+parser.add_argument('--db_password', type=str, default='my_password',
+                    help='Password to connect to the database.')
+parser.add_argument('--db_host', type=str, default='localhost',
+                    help='The name of the server or IP address.')
+parser.add_argument('--db_port', type=str, default='5432',
+                    help='Port for connecting to the database.')
 args = parser.parse_args()
 
 
-def create_connection(db_name, db_user, db_password,
-                      db_host, db_port) -> psycopg2.extensions.connection:
-    """ A function for creating a connection to the database.
+def create_connection(db_user: str, db_password: str, db_host: str,
+                      db_port: str, db_name: Optional[str] = None):
+    """A function to create a connection to a PostgreSQL database instance.
+    Parameters:
+    ----------
+        - db_user: type[`str`]
+        Username to connect to the database.
+        - db_password: type[`str`]
+        Password to connect to the database.
+        - db_host: type[`str`]
+        The name of the server or IP address that the database is running on.
+        - db_port: type[`str`]
+        Port for connecting to the database.
+        - db_name: type[`str`]
+        Database name.
+    Returns:
+    -------
+        type[`psycopg2.extensions.connection`]
+        A connection object to a PostgreSQL database instance.
     """
+
+    if db_name is None:
+        print('Connection to PostgreSQL...')
+    else:
+        print(f'Connection to PostgreSQL Database |{db_name}|...')
+
     connection = None
     try:
         connection = psycopg2.connect(
-            database=db_name,
             user=db_user,
             password=db_password,
             host=db_host,
-            port=db_port
+            port=db_port,
+            database=db_name
         )
-        print("Connection to PostgreSQL DB successful.")
+        if db_name is None:
+            print("Connection to PostgreSQL successful.")
+        else:
+            print(f'Connection to PostgreSQL Database |{db_name}| successful.')
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
+        raise SystemExit
+    else:
+        return connection
 
-    return connection
 
+def create_database(db_name: str, connection:
+                    psycopg2.extensions.connection) -> Union[bool, None]:
+    """Database creation in PostgreSQL.
 
-def check_if_exists_tables(connection: psycopg2.extensions.connection,
-                           db_tables: List[str]) -> Dict[str, bool]:
-    """A function to check the existence of all required tables.
+    Parameters:
+    ----------
+        - db_name: type[`str`]
+        A database name.
 
-    Parametes
-    ---------
+        - connection: type[`psycopg2.extensions.connection`]
+        A connection object to a PostgreSQL database instance.
 
-        - db_tables: `List[str]`
-
-        List of database tables.
-
-    Returns
+    Returns:
     -------
-        class: `Dict[str, bool]`
-
-        Dictionary, where the `key` is a name of table, and the `value`
-        is whether it exists in the database.
+        type[`bool`]: whether the database was created or not.
     """
 
+    cursor: psycopg2.extensions.cursor
+
+    connection.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     cursor = connection.cursor()
-    checking_tables: Dict = dict.fromkeys(db_tables)
-    select_query = """select exists(select * from information_schema.tables
-                       where table_name = %s)"""
 
-    for table in db_tables:
-        cursor.execute(select_query, (table, ))
-        checking_tables[table] = cursor.fetchone()[0]
+    print('Database creation...')
+    try:
+        cursor.execute(
+            sql.SQL("CREATE DATABASE {}")
+               .format(sql.Identifier(db_name))
+        )
+        print('The database has been created successfully.')
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
+        raise SystemExit
+    else:
+        connection.commit()
+        return True
 
-    return checking_tables
 
+def create_tables(connection, db_table: str) -> None:
+    """A function to create database tables.
+    The function creates seven tables: `users`, `carts`, `categories`,
+    `order_status`, `products`, `cart_product`, `orders`.
 
-def check_if_table_is_empty(connection: psycopg2.extensions.connection,
-                            table: str) -> bool:
-    select_query = """select * from %s"""
-    with connection.cursor() as cursor:
-        cursor.execute(select_query, (table, ))
-        return cursor.fetchone()
+    Parameters:
+    ----------
+
+        - connection: `psycopg2.extensions.connection`.
+        A connection object to a PostgreSQL database instance.
+
+        - db_table: `str`.
+        A database table name.
+    """
+
+    create_table_query: str
+    cursor: psycopg2.extensions.cursor
+
+    if db_table == 'users':
+        print('Creating a table |users|...')
+
+        create_table_query = '''
+            CREATE TABLE users (
+                    user_id INTEGER NOT NULL PRIMARY KEY
+                        GENERATED ALWAYS AS IDENTITY,
+                    email VARCHAR(255) NOT NULL,
+                    password VARCHAR(255) NOT NULL,
+                    first_name VARCHAR(255) NOT NULL,
+                    last_name VARCHAR(255) NOT NULL,
+                    middle_name VARCHAR(255),
+                    is_staff SMALLINT,
+                    country VARCHAR(255),
+                    city VARCHAR(255),
+                    address TEXT
+            )
+        '''
+    elif db_table == 'carts':
+        print('Creating a table |carts|...')
+
+        create_table_query = '''
+            CREATE TABLE carts (
+                cart_id INTEGER NOT NULL PRIMARY KEY
+                    GENERATED ALWAYS AS IDENTITY,
+                Users_user_id INTEGER NOT NULL,
+                subtotal DECIMAL NOT NULL,
+                total DECIMAL NOT NULL,
+                timestamp TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                FOREIGN KEY (Users_user_id) REFERENCES users (user_id)
+            )
+        '''
+    elif db_table == 'categories':
+        print('Creating a table |categories|...')
+
+        create_table_query = '''
+            CREATE TABLE categories (
+                category_id INTEGER  NOT NULL PRIMARY KEY
+                    GENERATED ALWAYS AS IDENTITY,
+                category_title VARCHAR(255) NOT NULL,
+                category_description TEXT
+            )
+        '''
+    elif db_table == 'order_status':
+        print('Creating a table |order_status|...')
+
+        create_table_query = '''
+            CREATE TABLE order_status (
+                order_status_id INTEGER  NOT NULL PRIMARY KEY
+                    GENERATED ALWAYS AS IDENTITY,
+                status_name VARCHAR(255) NOT NULL
+            )
+        '''
+    elif db_table == 'products':
+        print('Creating a table |products|...')
+
+        create_table_query = '''
+            CREATE TABLE products (
+                product_id INTEGER NOT NULL PRIMARY KEY
+                    GENERATED ALWAYS AS IDENTITY,
+                product_title VARCHAR(255) NOT NULL,
+                product_description TEXT,
+                in_stock INTEGER NOT NULL,
+                price REAL NOT NULL,
+                slug VARCHAR(45) NOT NULL,
+                category_id INTEGER NOT NULL,
+                FOREIGN KEY (category_id) REFERENCES categories (category_id)
+            )
+        '''
+    elif db_table == 'cart_product':
+        print('Creating a table |cart_product|...')
+
+        create_table_query = '''
+            CREATE TABLE cart_product (
+                carts_cart_id INTEGER NOT NULL,
+                products_product_id INTEGER NOT NULL,
+                FOREIGN KEY (carts_cart_id) REFERENCES carts (cart_id),
+                FOREIGN KEY (products_product_id) REFERENCES
+                    products (product_id)
+            )
+        '''
+    elif db_table == 'orders':
+        print('Creating a table |order|...')
+
+        create_table_query = '''
+            CREATE TABLE orders (
+                order_id INTEGER NOT NULL PRIMARY KEY,
+                Carts_cart_id INTEGER NOT NULL,
+                Order_status_order_status_id INTEGER NOT NULL,
+                shipping_total DECIMAL NOT NULL,
+                total DECIMAL NOT NULL,
+                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                FOREIGN KEY (Carts_cart_id) REFERENCES carts (cart_id),
+                FOREIGN KEY (Order_status_order_status_id) REFERENCES
+                    order_status (order_status_id)
+            )
+        '''
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(create_table_query)
+        print('The table was created successfully.')
+    except (Exception, DatabaseError) as error:
+        print(error)
+    else:
+        connection.commit()
 
 
 def insert_data_to_db(connection: psycopg2.extensions.connection,
-                      table: str, file: str) -> None:
+                      table: str, file: str, path: str) -> None:
+    """ A function for loading data from csv files into database tables.
 
+    Parameters:
+    ----------
+        - connection: `psycopg2.extensions.connection`.
+        A connection object to a PostgreSQL database instance.
+
+        - table: `str`.
+        Database table name.
+
+        - file: `str`
+        The name of the data file.
+
+        - path: `str`
+        Path to data files.
+    """
+
+    print('Loading data into database tables...')
+    path = path + file
     with connection.cursor() as cursor:
-        with open(file, 'r') as f:
+        with open(path, 'r') as f:
             try:
                 cursor.copy_from(f, table, sep=',')
-                print(f'Data from {f} loaded successfully.')
-            except Exception as e:
-                print(e)
+                print(f'Data from |{file}| loaded successfully.')
+            except Exception as error:
+                print(error)
 
     connection.commit()
 
 
 if __name__ == "__main__":
 
-    db_tables: List[str] = ['users',
-                            'carts',
-                            'categories',
-                            'products',
-                            'cart_product',
-                            'order_status',
-                            'order']
-
-    required_files: List[str] = ['users.csv',
-                                 'carts.csv',
-                                 'categories.csv',
-                                 'products.csv',
-                                 'cart_products.csv',
-                                 'order_statuses.csv',
-                                 'orders.csv']
+    tables_and_files = {
+        'users': 'users.csv',
+        'carts': 'carts.csv',
+        'categories': 'categories.csv',
+        'products': 'products.csv',
+        'cart_product': 'cart_products.csv',
+        'order_status': 'order_statuses.csv',
+        'orders': 'orders.csv'
+    }
 
     connection = create_connection(
-        args.db_name, args.user, args.db_password,
-        args.db_host, args.db_port
+        args.user,
+        args.db_password,
+        args.db_host,
+        args.db_port
     )
 
-    checking_tables = check_if_exists_tables(
-        connection,
-        db_tables
-    )
+    if create_database(args.db_name, connection):
+        connection = create_connection(
+            args.user,
+            args.db_password,
+            args.db_host,
+            args.db_port,
+            args.db_name
+        )
+        for table in tables_and_files.keys():
+            create_tables(connection, table)
 
-    if all([value for key, value in checking_tables.items()]):
-        print('All tables exist.')
-    else:
-        for table, exist in checking_tables.items():
-            if not exist:
-                print(f'Error: table |{table}| does not exist.')
-
-    for table, file in zip(db_tables, required_files):
-        #print(check_if_table_is_empty(connection, table))
-        insert_data_to_db(connection, table, file)
+    for table, file in tables_and_files.items():
+        insert_data_to_db(connection, table, file, args.data_path)
