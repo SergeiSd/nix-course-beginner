@@ -290,6 +290,37 @@ def insert_data_to_db(connection: psycopg2.extensions.connection,
     connection.commit()
 
 
+def task1(connection: psycopg2.extensions.connection):
+
+    alter_query: str
+    cursor: psycopg2.extensions.cursor
+
+    alter_query = '''
+        ALTER TABLE users ADD COLUMN phone_number INTEGER
+    '''
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(alter_query)
+        print('The column |phone_number| was added successfully.')
+    except (Exception, DatabaseError) as error:
+        print(error)
+    else:
+        connection.commit()
+
+    alter_query = '''
+        ALTER TABLE users ALTER COLUMN phone_number TYPE VARCHAR
+    '''
+
+    try:
+        cursor.execute(alter_query)
+        print('The type of column |phone_number| was changed successfully.')
+    except (Exception, DatabaseError) as error:
+        print(error)
+    else:
+        connection.commit()
+
+
 if __name__ == "__main__":
 
     tables_and_files = {
@@ -320,5 +351,7 @@ if __name__ == "__main__":
         for table in tables_and_files.keys():
             create_tables(connection, table)
 
-    for table, file in tables_and_files.items():
-        insert_data_to_db(connection, table, file, args.data_path)
+        for table, file in tables_and_files.items():
+            insert_data_to_db(connection, table, file, args.data_path)
+
+    task1(connection)
